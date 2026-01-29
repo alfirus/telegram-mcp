@@ -4803,77 +4803,56 @@ async def _main() -> None:
         if PORT:
             # Run with HTTP/SSE transport on the specified port
             import uvicorn
-            from fastapi import FastAPI, Request
-            from fastapi.responses import Response, JSONResponse
-            from websocket_manager import ws_manager, TelegramEventHandler
-            from fastapi import WebSocket, WebSocketDisconnect
+            from starlette.applications import Starlette
+            from starlette.routing import Mount, Route
+            from starlette.responses import JSONResponse as StarletteJSONResponse
+            from starlette.responses import Response as StarletteResponse
 
             print(f"Starting HTTP/SSE server on {HOST}:{PORT}...")
-            
-            # Create FastAPI app with additional endpoints
-            base_app = mcp.sse_app()
-            app = FastAPI(title="Telegram MCP Server")
-            
-            # Mount MCP endpoints
-            app.mount("/mcp", base_app)
-            
+
+            # Get the MCP SSE app (provides /sse and /messages endpoints)
+            mcp_app = mcp.sse_app()
+
             # Health check endpoint
-            @app.get("/health")
-            async def health_check():
-                return {
+            async def health_check(request):
+                return StarletteJSONResponse({
                     "status": "healthy",
                     "telegram_connected": client.is_connected(),
                     "version": "2.0.1",
-                    "enhancements": ["cache", "rate_limiter", "telemetry", "database", "websocket"]
-                }
-            
-            # Metrics endpoint for Prometheus
-            @app.get("/metrics")
-            async def metrics():
-                metrics_data = telemetry.get_metrics()
-                return Response(content=metrics_data, media_type="text/plain")
-            
-            # WebSocket endpoint for real-time updates
-            @app.websocket("/ws/updates")
-            async def websocket_endpoint(websocket: WebSocket):
-                await ws_manager.connect(websocket)
-                try:
-                    while True:
-                        # Receive messages for subscription updates
-                        data = await websocket.receive_json()
-                        
-                        if data.get("action") == "subscribe":
-                            await ws_manager.update_subscription(
-                                websocket,
-                                chat_ids=data.get("chat_ids"),
-                                message_types=data.get("message_types")
-                            )
-                        elif data.get("action") == "stats":
-                            stats = ws_manager.get_stats()
-                            await ws_manager.send_personal_message(
-                                {"type": "stats", "data": stats},
-                                websocket
-                            )
-                            
-                except WebSocketDisconnect:
-                    ws_manager.disconnect(websocket)
-                except Exception as e:
-                    print(f"[WebSocket] Error: {e}")
-                    ws_manager.disconnect(websocket)
-            
-            # Register Telegram event handlers for WebSocket
-            event_handler = TelegramEventHandler(client, ws_manager)
-            await event_handler.register_handlers()
-            
-            # Statistics endpoint
-            @app.get("/stats")
-            async def get_stats():
-                return JSONResponse({
-                    "cache": cache.get_stats(),
-                    "rate_limiter": rate_limiter.get_stats(),
-                    "websocket": ws_manager.get_stats()
+                    "mcp_endpoints": {
+                        "sse": "/sse",
+                        "messages": "/messages"
+                    }
                 })
-            
+
+            # Info endpoint for MCP client discovery
+            async def mcp_info(request):
+                return StarletteJSONResponse({
+                    "name": "telegram-mcp",
+                    "version": "2.0.1",
+                    "protocol": "mcp",
+                    "transport": "sse",
+                    "endpoints": {
+                        "sse": "/sse",
+                        "messages": "/messages"
+                    }
+                })
+
+            # Create combined Starlette app with MCP at root level
+            app = Starlette(
+                routes=[
+                    Route("/health", health_check),
+                    Route("/info", mcp_info),
+                    Mount("/", app=mcp_app),  # Mount MCP at root for /sse and /messages
+                ]
+            )
+
+            print(f"MCP SSE endpoints available at:")
+            print(f"  - SSE: http://{HOST}:{PORT}/sse")
+            print(f"  - Messages: http://{HOST}:{PORT}/messages")
+            print(f"  - Health: http://{HOST}:{PORT}/health")
+            print(f"  - Info: http://{HOST}:{PORT}/info")
+
             config = uvicorn.Config(app, host=HOST, port=int(PORT), log_level="info")
             server = uvicorn.Server(config)
             await server.serve()
