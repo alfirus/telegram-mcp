@@ -87,6 +87,7 @@ Required (generated from session_string_generator.py):
 
 - **[docs/SETUP_CREDENTIALS.md](docs/SETUP_CREDENTIALS.md)** - Complete setup & credential generation guide (START HERE!)
 - **[docs/TROUBLESHOOT_STARTUP.md](docs/TROUBLESHOOT_STARTUP.md)** - Detailed startup error solutions and troubleshooting
+- **[docs/MACOS_FIREWALL.md](docs/MACOS_FIREWALL.md)** - macOS firewall and network troubleshooting
 - **[docs/TROUBLESHOOT_PYTHON_314.md](docs/TROUBLESHOOT_PYTHON_314.md)** - Python 3.14 compatibility guide
 - **[docs/SESSION_STRING_GUIDE.md](docs/SESSION_STRING_GUIDE.md)** - Session string management and troubleshooting
 - **[docs/INSTALLATION.md](docs/INSTALLATION.md)** - Installation and daemon management guide
@@ -661,6 +662,40 @@ lsof -i :3000
 
 # Use different port
 ./daemon.sh start --port 8080
+```
+
+### macOS-Specific Issues
+
+#### Firewall Blocking Connection
+
+macOS firewall might be blocking Telegram connections:
+
+```bash
+# Check firewall status
+sudo defaults read /Library/Preferences/com.apple.alf globalstate
+# 0 = OFF, 1 = ON (basic), 2 = ON (strict)
+
+# Temporarily disable to test
+sudo defaults write /Library/Preferences/com.apple.alf globalstate -int 0
+./daemon.sh start
+
+# If it works, re-enable and add Python to exceptions
+sudo defaults write /Library/Preferences/com.apple.alf globalstate -int 1
+```
+
+**See [docs/MACOS_FIREWALL.md](docs/MACOS_FIREWALL.md) for complete macOS network troubleshooting.**
+
+#### M1/M2 Mac Compatibility
+
+```bash
+# Check your architecture
+arch
+# arm64 = M1/M2, i386 = Intel
+
+# Ensure you're using native Python
+/opt/homebrew/bin/python3 --version  # M1/M2
+# or
+/usr/local/bin/python3 --version     # Intel
 ```
 
 See [INSTALLATION.md](docs/INSTALLATION.md) and [docs/TROUBLESHOOT_STARTUP.md](docs/TROUBLESHOOT_STARTUP.md) for more troubleshooting.

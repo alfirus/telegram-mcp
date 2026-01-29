@@ -4672,9 +4672,14 @@ async def _main() -> None:
         # Start the Telethon client non-interactively
         print("Starting Telegram client...")
         try:
-            # Connect with built-in retry logic from TelegramClient
-            # The client has timeout=30 and retry settings configured at initialization
-            await client.start()
+            # For Python 3.14+, wrap client.start() in a task to handle
+            # stricter asyncio timeout requirements
+            async def start_client():
+                await client.start()
+
+            # Create and await the task to ensure proper timeout context
+            start_task = asyncio.create_task(start_client())
+            await start_task
         except TimeoutError:
             print(
                 "Timeout connecting to Telegram. This may be a network issue.",
@@ -4881,7 +4886,22 @@ async def _main() -> None:
 
 
 def main() -> None:
-    nest_asyncio.apply()
+    """
+    Main entry point for the Telegram MCP server.
+
+    Uses nest_asyncio for compatibility with Jupyter notebooks and other
+    environments that may already have an event loop running (like MCP stdio mode).
+
+    For Python 3.14+, nest_asyncio conflicts with stricter asyncio timeout
+    handling, so we only apply it for stdio mode (non-HTTP) where it's needed.
+    """
+    # Only apply nest_asyncio for stdio mode (no PORT set)
+    # HTTP mode doesn't need it and it causes issues with Python 3.14
+    if not PORT:
+        # Stdio mode: may need nested event loop for MCP client integration
+        nest_asyncio.apply()
+
+    # Run the async main function
     asyncio.run(_main())
 
 
