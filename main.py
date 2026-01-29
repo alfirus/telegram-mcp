@@ -66,6 +66,12 @@ TELEGRAM_SESSION_NAME = os.getenv("TELEGRAM_SESSION_NAME")
 # Check if a string session exists in environment, otherwise use file-based session
 SESSION_STRING = os.getenv("TELEGRAM_SESSION_STRING")
 
+# Server configuration for HTTP/SSE transport
+PORT = os.getenv("PORT")
+
+# Access control - only allow interactions from this Telegram user ID
+TELEGRAM_USER_ID = os.getenv("TELEGRAM_USER_ID")
+
 mcp = FastMCP("telegram")
 
 if SESSION_STRING:
@@ -4130,9 +4136,32 @@ async def _main() -> None:
         print("Starting Telegram client...")
         await client.start()
 
+        # Validate TELEGRAM_USER_ID if set
+        if TELEGRAM_USER_ID:
+            me = await client.get_me()
+            if str(me.id) != str(TELEGRAM_USER_ID):
+                print(
+                    f"Access denied: Telegram user ID {me.id} does not match "
+                    f"configured TELEGRAM_USER_ID {TELEGRAM_USER_ID}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            print(f"Access granted for Telegram user ID: {me.id}")
+
         print("Telegram client started. Running MCP server...")
-        # Use the asynchronous entrypoint instead of mcp.run()
-        await mcp.run_stdio_async()
+
+        if PORT:
+            # Run with HTTP/SSE transport on the specified port
+            import uvicorn
+
+            print(f"Starting HTTP/SSE server on port {PORT}...")
+            app = mcp.sse_app()
+            config = uvicorn.Config(app, host="0.0.0.0", port=int(PORT), log_level="info")
+            server = uvicorn.Server(config)
+            await server.serve()
+        else:
+            # Use the asynchronous stdio entrypoint
+            await mcp.run_stdio_async()
     except Exception as e:
         print(f"Error starting client: {e}", file=sys.stderr)
         if isinstance(e, sqlite3.OperationalError) and "database is locked" in str(e):
