@@ -655,6 +655,32 @@ def bot_mode_restrict(*chat_param_names):
     return decorator
 
 
+async def bot_get_entity(chat_id):
+    """
+    Resolve a chat entity, with fallback for Bot Mode.
+
+    Bots may fail to resolve entities via get_entity() if the user hasn't
+    been cached yet. This helper falls back to InputPeerUser for the
+    configured TELEGRAM_USER_ID.
+    """
+    try:
+        return await client.get_entity(chat_id)
+    except Exception:
+        if IS_BOT_MODE:
+            # In bot mode, try using InputPeerUser directly for the allowed user
+            from telethon.tl.types import InputPeerUser
+
+            target_id = int(chat_id) if isinstance(chat_id, str) else chat_id
+            if target_id == TELEGRAM_USER_ID:
+                try:
+                    return await client.get_input_entity(target_id)
+                except Exception:
+                    # Last resort: construct InputPeerUser with access_hash=0
+                    # This works for bots that have interacted with the user
+                    return InputPeerUser(target_id, 0)
+        raise
+
+
 def format_entity(entity) -> Dict[str, Any]:
     """Helper function to format entity information consistently."""
     result = {"id": entity.id}
@@ -772,7 +798,7 @@ async def get_messages(chat_id: Union[int, str], page: int = 1, page_size: int =
         page_size: Number of messages per page.
     """
     try:
-        entity = await client.get_entity(chat_id)
+        entity = await bot_get_entity(chat_id)
         offset = (page - 1) * page_size
         messages = await client.get_messages(entity, limit=page_size, add_offset=offset)
         if not messages:
@@ -812,7 +838,7 @@ async def send_message(chat_id: Union[int, str], message: str) -> str:
         message: The message content to send.
     """
     try:
-        entity = await client.get_entity(chat_id)
+        entity = await bot_get_entity(chat_id)
         await client.send_message(entity, message)
         return "Message sent successfully."
     except Exception as e:
@@ -1127,7 +1153,7 @@ async def list_messages(
         to_date: Filter messages until this date (format: YYYY-MM-DD).
     """
     try:
-        entity = await client.get_entity(chat_id)
+        entity = await bot_get_entity(chat_id)
 
         # Parse date filters if provided
         from_date_obj = None
@@ -1167,18 +1193,31 @@ async def list_messages(
         # Prepare filter parameters
         params = {}
         if search_query:
-            # IMPORTANT: Do not combine offset_date with search.
-            # Use server-side search alone, then enforce date bounds client-side.
-            params["search"] = search_query
-            messages = []
-            async for msg in client.iter_messages(entity, **params):  # newest -> oldest
-                if to_date_obj and msg.date > to_date_obj:
-                    continue
-                if from_date_obj and msg.date < from_date_obj:
-                    break
-                messages.append(msg)
-                if len(messages) >= limit:
-                    break
+            if IS_BOT_MODE:
+                # Bots cannot use server-side search, filter client-side
+                messages = []
+                async for msg in client.iter_messages(entity):
+                    if msg.message and search_query.lower() in msg.message.lower():
+                        if to_date_obj and msg.date > to_date_obj:
+                            continue
+                        if from_date_obj and msg.date < from_date_obj:
+                            break
+                        messages.append(msg)
+                        if len(messages) >= limit:
+                            break
+            else:
+                # IMPORTANT: Do not combine offset_date with search.
+                # Use server-side search alone, then enforce date bounds client-side.
+                params["search"] = search_query
+                messages = []
+                async for msg in client.iter_messages(entity, **params):  # newest -> oldest
+                    if to_date_obj and msg.date > to_date_obj:
+                        continue
+                    if from_date_obj and msg.date < from_date_obj:
+                        break
+                    messages.append(msg)
+                    if len(messages) >= limit:
+                        break
 
         else:
             # Use server-side iteration when only date bounds are present
@@ -1324,11 +1363,32 @@ async def list_chats(chat_type: str = None, limit: int = 20) -> str:
     """
     List available chats with metadata.
 
+    In Bot Mode: Returns only the configured TELEGRAM_USER_ID chat
+    (bots do not have a dialog list).
+
     Args:
         chat_type: Filter by chat type ('user', 'group', 'channel', or None for all)
         limit: Maximum number of chats to retrieve.
     """
     try:
+        if IS_BOT_MODE:
+            # Bots cannot use get_dialogs(). Return the allowed user chat.
+            try:
+                entity = await bot_get_entity(TELEGRAM_USER_ID)
+                name = getattr(entity, "first_name", "User")
+                if hasattr(entity, "last_name") and entity.last_name:
+                    name += f" {entity.last_name}"
+                username = getattr(entity, "username", None)
+                chat_info = f"Chat ID: {TELEGRAM_USER_ID}, Name: {name}, Type: user"
+                if username:
+                    chat_info += f", Username: @{username}"
+                return f"Bot Mode: Authorized chat only\n{chat_info}"
+            except Exception:
+                return (
+                    f"Bot Mode: Authorized chat only\n"
+                    f"Chat ID: {TELEGRAM_USER_ID}, Type: user"
+                )
+
         dialogs = await client.get_dialogs(limit=limit)
 
         results = []
@@ -2985,8 +3045,8 @@ async def forward_message(
     In Bot Mode: Both source and destination must be TELEGRAM_USER_ID.
     """
     try:
-        from_entity = await client.get_entity(from_chat_id)
-        to_entity = await client.get_entity(to_chat_id)
+        from_entity = await bot_get_entity(from_chat_id)
+        to_entity = await bot_get_entity(to_chat_id)
         await client.forward_messages(to_entity, message_id, from_entity)
         return f"Message {message_id} forwarded from {from_chat_id} to {to_chat_id}."
     except Exception as e:
@@ -3013,7 +3073,7 @@ async def edit_message(chat_id: Union[int, str], message_id: int, new_text: str)
     In Bot Mode: Can only edit messages in conversation with TELEGRAM_USER_ID.
     """
     try:
-        entity = await client.get_entity(chat_id)
+        entity = await bot_get_entity(chat_id)
         await client.edit_message(entity, message_id, new_text)
         return f"Message {message_id} edited."
     except Exception as e:
@@ -3036,7 +3096,7 @@ async def delete_message(chat_id: Union[int, str], message_id: int) -> str:
     In Bot Mode: Can only delete messages in conversation with TELEGRAM_USER_ID.
     """
     try:
-        entity = await client.get_entity(chat_id)
+        entity = await bot_get_entity(chat_id)
         await client.delete_messages(entity, message_id)
         return f"Message {message_id} deleted."
     except Exception as e:
@@ -3109,7 +3169,7 @@ async def reply_to_message(chat_id: Union[int, str], message_id: int, text: str)
     In Bot Mode: Can only reply to messages from TELEGRAM_USER_ID.
     """
     try:
-        entity = await client.get_entity(chat_id)
+        entity = await bot_get_entity(chat_id)
         await client.send_message(entity, text, reply_to=message_id)
         return f"Replied to message {message_id} in chat {chat_id}."
     except Exception as e:
@@ -3163,10 +3223,25 @@ async def search_public_chats(query: str) -> str:
 async def search_messages(chat_id: Union[int, str], query: str, limit: int = 20) -> str:
     """
     Search for messages in a chat by text.
+
+    In Bot Mode: Uses client-side filtering (bots cannot use server-side search).
     """
     try:
-        entity = await client.get_entity(chat_id)
-        messages = await client.get_messages(entity, limit=limit, search=query)
+        entity = await bot_get_entity(chat_id)
+
+        if IS_BOT_MODE:
+            # Bots cannot use server-side search, filter client-side
+            messages = []
+            async for msg in client.iter_messages(entity):
+                if msg.message and query.lower() in msg.message.lower():
+                    messages.append(msg)
+                    if len(messages) >= limit:
+                        break
+        else:
+            messages = await client.get_messages(entity, limit=limit, search=query)
+
+        if not messages:
+            return "No messages found matching the search query."
 
         lines = []
         for msg in messages:
