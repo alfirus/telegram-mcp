@@ -23,19 +23,45 @@ chmod +x install.sh daemon.sh
 source venv/bin/activate
 ```
 
-### 2. Configure Credentials
+### 2. Generate Session String
 
 ```bash
-# Edit .env file with your Telegram API credentials
+# Install dependencies (choose one method):
+
+# Option A: Using pip3 (recommended if pip not found)
+pip3 install -r requirements.txt
+
+# Option B: Using pip (if you have a virtual environment activated)
+pip install -r requirements.txt
+
+# Option C: Let the installer handle it
+# If you ran ./install.sh --venv, just activate and it's done:
+source venv/bin/activate
+
+# Now generate the session string
+python3 session_string_generator.py
+```
+
+If you get "command not found: pip", use `pip3` instead (it's more reliable).
+
+This script will prompt you to enter:
+- `TELEGRAM_API_ID` - Get from https://my.telegram.org
+- `TELEGRAM_API_HASH` - Get from https://my.telegram.org
+- Phone number or bot token
+
+### 3. Configure Credentials
+
+```bash
+# Edit .env file with the generated session string
 nano .env
 ```
 
-Required:
-- `TELEGRAM_API_ID` - Get from https://my.telegram.org
-- `TELEGRAM_API_HASH` - Get from https://my.telegram.org  
-- `TELEGRAM_SESSION_STRING` - Generate with `python session_string_generator.py`
+Required (generated from session_string_generator.py):
+- `TELEGRAM_API_ID` - Your API ID
+- `TELEGRAM_API_HASH` - Your API hash
+- `TELEGRAM_SESSION_STRING` - Generated from the script above
 
-### 3. Run as Daemon
+### 4. Run as Daemon
 
 ```bash
 # Start daemon
@@ -59,10 +85,12 @@ Required:
 
 ## 📖 Full Documentation
 
-- **[INSTALLATION.md](docs/INSTALLATION.md)** - Complete installation and daemon setup guide
-- **[IMPLEMENTATION_SUMMARY.md](docs/IMPLEMENTATION_SUMMARY.md)** - v2.0 enhancements overview
-- **[ENHANCEMENTS.md](docs/ENHANCEMENTS.md)** - Detailed feature documentation
-- **[CHECKLIST.md](docs/CHECKLIST.md)** - Implementation status and testing guide
+- **[docs/SETUP_CREDENTIALS.md](docs/SETUP_CREDENTIALS.md)** - Complete setup & credential generation guide (START HERE!)
+- **[docs/INSTALLATION.md](docs/INSTALLATION.md)** - Installation and daemon management guide
+- **[QUICK_START.md](QUICK_START.md)** - Fast reference for common tasks
+- **[docs/IMPLEMENTATION_SUMMARY.md](docs/IMPLEMENTATION_SUMMARY.md)** - v2.0 enhancements overview
+- **[docs/ENHANCEMENTS.md](docs/ENHANCEMENTS.md)** - Detailed feature documentation
+- **[docs/CHECKLIST.md](docs/CHECKLIST.md)** - Implementation status and testing guide
 
 ---
 

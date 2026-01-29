@@ -163,6 +163,9 @@ echo ""
 
 # Activation message
 if [ "$USE_VENV" = true ]; then
-    echo -e "${BLUE}Activate virtual environment to continue:${NC}"
-    echo -e "${BLUE}  source venv/bin/activate${NC}\n"
+    echo -e "${BLUE}To activate virtual environment and start using it:${NC}"
+    echo -e "${BLUE}  source venv/bin/activate${NC}"
+    echo -e ""
+    echo -e "${BLUE}After activation, 'pip' and 'python3' commands will use the venv.${NC}"
+    echo -e "${BLUE}If 'pip' is not found, use 'pip3' instead.${NC}\n"
 fi
