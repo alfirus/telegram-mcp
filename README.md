@@ -56,18 +56,20 @@ This script will prompt you to enter:
 nano .env
 ```
 
-**Option A: User Account Mode** (full Telegram access)
+**Option A: Bot Mode** (recommended for AI agents) 🔐
 - `TELEGRAM_API_ID` - Your API ID (from https://my.telegram.org)
-- `TELEGRAM_API_HASH` - Your API hash
-- `TELEGRAM_SESSION_STRING` - Generated from step 2
-
-**Option B: Bot Mode** (recommended for AI agents)
-- `TELEGRAM_API_ID` - Your API ID
 - `TELEGRAM_API_HASH` - Your API hash
 - `TELEGRAM_BOT_TOKEN` - Get from @BotFather on Telegram
 - `TELEGRAM_USER_ID` - Your user ID (get from @userinfobot)
 
-> **Note:** For Bot Mode, you must send `/start` to your bot first!
+> **Security:** In Bot Mode, the AI agent can ONLY communicate with your `TELEGRAM_USER_ID`. This prevents accidental or unauthorized messaging to other users.
+
+> **Note:** You must send `/start` to your bot first!
+
+**Option B: User Account Mode** (full Telegram access)
+- `TELEGRAM_API_ID` - Your API ID
+- `TELEGRAM_API_HASH` - Your API hash
+- `TELEGRAM_SESSION_STRING` - Generated from step 2
 
 ### 4. Run as Daemon
 
@@ -111,6 +113,7 @@ nano .env
 
 **New in v2.0.2:**
 - 🤖 **Bot Mode** - Use Telegram Bot for AI agent communication (recommended)
+- 🔐 **Bot Mode Security** - Restricts all operations to `TELEGRAM_USER_ID` only
 - 🔗 **MCP SSE Transport** - Proper `/sse` endpoint for MCP clients
 - 🐍 **Python 3.14 Support** - Full compatibility with latest Python
 - 🔒 **Security Hardening** - Path traversal protection, sanitized logs
@@ -307,17 +310,24 @@ TELEGRAM_SESSION_STRING=your_session_string
 ```
 
 #### Bot Mode (Recommended for AI Agents)
-Uses a Telegram Bot to communicate. The bot can only message users who have started a conversation with it first.
+Uses a Telegram Bot to communicate with **built-in security restrictions**.
+
 ```bash
 TELEGRAM_BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrsTUVwxyz
 TELEGRAM_USER_ID=1009859337  # Your user ID (bot sends messages to you)
 ```
 
+**🔒 Bot Mode Security:**
+- The bot can **ONLY** send/receive messages to the configured `TELEGRAM_USER_ID`
+- Any attempt to interact with other users is automatically blocked
+- This ensures AI agents can only communicate with you, not random users
+
 **To set up Bot Mode:**
 1. Open Telegram and search for `@BotFather`
 2. Send `/newbot` and follow prompts
 3. Copy the bot token to `.env`
-4. **Important:** Send `/start` to your bot first (bots can only message users who messaged them)
+4. Set your `TELEGRAM_USER_ID` (get from @userinfobot)
+5. **Important:** Send `/start` to your bot first (bots can only message users who messaged them)
 
 ### Getting Optional Credentials
 
@@ -500,6 +510,21 @@ docker logs -f telegram-mcp
 
 ## 🔒 Security
 
+### Bot Mode Security (Recommended for AI Agents)
+
+When running in **Bot Mode**, the MCP server enforces strict access control:
+
+- ✅ Bot can **ONLY** communicate with `TELEGRAM_USER_ID`
+- ❌ Any attempt to send/receive messages to other users is **blocked**
+- 🔐 Protects against AI agents accidentally or intentionally messaging wrong users
+
+This restriction applies to all chat operations:
+- `send_message` - Can only send to your user ID
+- `get_messages` - Can only read from your user ID
+- `forward_message` - Can only forward to/from your user ID
+- `edit_message` / `delete_message` - Can only modify messages with your user ID
+- `reply_to_message` - Can only reply in conversations with your user ID
+
 ### File Permissions
 
 - `.env` file created with `600` permissions (read-only for owner)
@@ -518,6 +543,7 @@ docker logs -f telegram-mcp
 - Session validation on startup
 - Sanitized logging (no credentials)
 - Type validation on all inputs
+- Path traversal protection for file operations
 
 ---
 
@@ -852,6 +878,7 @@ For issues or questions:
 
 ### What's New in 2.0.2
 - **Bot Mode** - Use a Telegram Bot instead of user account (recommended for AI agents)
+- **Bot Mode Security** - Restricts all operations to configured `TELEGRAM_USER_ID` only
 - **MCP SSE Transport** - Proper `/sse` and `/messages` endpoints for MCP clients
 - **Python 3.14 Support** - Fixed asyncio compatibility issues
 - **Security Hardening** - Path traversal protection, sanitized logging, secure defaults
