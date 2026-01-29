@@ -87,6 +87,7 @@ Required (generated from session_string_generator.py):
 
 - **[docs/SETUP_CREDENTIALS.md](docs/SETUP_CREDENTIALS.md)** - Complete setup & credential generation guide (START HERE!)
 - **[docs/TROUBLESHOOT_STARTUP.md](docs/TROUBLESHOOT_STARTUP.md)** - Detailed startup error solutions and troubleshooting
+- **[docs/TROUBLESHOOT_PYTHON_314.md](docs/TROUBLESHOOT_PYTHON_314.md)** - Python 3.14 compatibility guide
 - **[docs/SESSION_STRING_GUIDE.md](docs/SESSION_STRING_GUIDE.md)** - Session string management and troubleshooting
 - **[docs/INSTALLATION.md](docs/INSTALLATION.md)** - Installation and daemon management guide
 - **[QUICK_START.md](QUICK_START.md)** - Fast reference for common tasks

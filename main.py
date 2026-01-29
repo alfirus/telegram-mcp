@@ -4672,9 +4672,10 @@ async def _main() -> None:
         # Start the Telethon client non-interactively
         print("Starting Telegram client...")
         try:
-            # Connect with timeout and retry logic
-            await asyncio.wait_for(client.start(), timeout=60)
-        except asyncio.TimeoutError:
+            # Connect with built-in retry logic from TelegramClient
+            # The client has timeout=30 and retry settings configured at initialization
+            await client.start()
+        except TimeoutError:
             print(
                 "Timeout connecting to Telegram. This may be a network issue.",
                 file=sys.stderr,
@@ -4683,8 +4684,13 @@ async def _main() -> None:
                 "Please check your internet connection and try again.",
                 file=sys.stderr,
             )
+            print(
+                "See docs/TROUBLESHOOT_STARTUP.md for more solutions.",
+                file=sys.stderr,
+            )
             sys.exit(1)
         except Exception as e:
+            error_str = str(e).lower()
             print(f"Error starting Telegram client: {e}", file=sys.stderr)
             print(
                 "Common causes:",
@@ -4700,6 +4706,10 @@ async def _main() -> None:
             )
             print(
                 "  3. Network connectivity issues",
+                file=sys.stderr,
+            )
+            print(
+                "\nSee docs/TROUBLESHOOT_STARTUP.md for detailed troubleshooting.",
                 file=sys.stderr,
             )
             sys.exit(1)
