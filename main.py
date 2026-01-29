@@ -4923,8 +4923,9 @@ async def _main() -> None:
             )
             sys.exit(1)
 
-        # Validate TELEGRAM_USER_ID if set
-        if TELEGRAM_USER_ID:
+        # Validate TELEGRAM_USER_ID if set (only in User Mode)
+        # In Bot Mode, the bot's ID is different from TELEGRAM_USER_ID (which is the target user)
+        if TELEGRAM_USER_ID and not IS_BOT_MODE:
             me = await client.get_me()
             if str(me.id) != str(TELEGRAM_USER_ID):
                 print(
@@ -4934,6 +4935,10 @@ async def _main() -> None:
                 )
                 sys.exit(1)
             print(f"Access granted for Telegram user ID: {me.id}")
+        elif IS_BOT_MODE:
+            me = await client.get_me()
+            print(f"Bot authenticated: @{me.username} (ID: {me.id})")
+            print(f"Bot will send messages to user ID: {TELEGRAM_USER_ID}")
 
         print("Telegram client started. Running MCP server...")
 
