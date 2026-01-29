@@ -67,6 +67,7 @@ def main() -> None:
             print("Add this to your .env file as:")
             print(f"TELEGRAM_SESSION_STRING={session_string}")
             print("\nIMPORTANT: Keep this string private and never share it with anyone!")
+            print("WARNING: This session string was printed to your terminal. Consider clearing your terminal history.")
 
             # Optional: auto-update the .env file
             choice = input(
@@ -92,6 +93,9 @@ def main() -> None:
                     # Write back to the .env file
                     with open(".env", "w") as file:
                         file.writelines(env_contents)
+
+                    # Set restrictive permissions (owner read/write only)
+                    os.chmod(".env", 0o600)
 
                     print("\n.env file updated successfully!")
                 except Exception as e:

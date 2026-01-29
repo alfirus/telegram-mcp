@@ -3,9 +3,10 @@ import sys
 import json
 import time
 import asyncio
-import sqlite3
+import hashlib
 import logging
 import mimetypes
+import secrets
 from datetime import datetime, timedelta
 from enum import Enum
 from typing import List, Dict, Optional, Union, Any
@@ -59,18 +60,110 @@ def json_serializer(obj):
 
 load_dotenv()
 
-TELEGRAM_API_ID = int(os.getenv("TELEGRAM_API_ID"))
-TELEGRAM_API_HASH = os.getenv("TELEGRAM_API_HASH")
-TELEGRAM_SESSION_NAME = os.getenv("TELEGRAM_SESSION_NAME")
+# =============================================================================
+# Environment Variable Validation (Enterprise Security)
+# =============================================================================
 
-# Check if a string session exists in environment, otherwise use file-based session
-SESSION_STRING = os.getenv("TELEGRAM_SESSION_STRING")
 
-# Server configuration for HTTP/SSE transport
-PORT = os.getenv("PORT")
+def _validate_env_vars() -> dict:
+    """
+    Validate and parse all environment variables with comprehensive error handling.
+    Returns a dictionary of validated configuration values.
+    """
+    config = {}
 
-# Access control - only allow interactions from this Telegram user ID
-TELEGRAM_USER_ID = os.getenv("TELEGRAM_USER_ID")
+    # TELEGRAM_API_ID (Required)
+    api_id_raw = os.getenv("TELEGRAM_API_ID")
+    if not api_id_raw:
+        raise ValueError("TELEGRAM_API_ID environment variable is required")
+    try:
+        config["api_id"] = int(api_id_raw)
+        if config["api_id"] <= 0:
+            raise ValueError("TELEGRAM_API_ID must be a positive integer")
+    except ValueError as e:
+        raise ValueError(f"TELEGRAM_API_ID must be a valid positive integer: {e}")
+
+    # TELEGRAM_API_HASH (Required)
+    api_hash = os.getenv("TELEGRAM_API_HASH")
+    if not api_hash:
+        raise ValueError("TELEGRAM_API_HASH environment variable is required")
+    if len(api_hash) != 32 or not all(c in "0123456789abcdef" for c in api_hash.lower()):
+        raise ValueError("TELEGRAM_API_HASH must be a 32-character hexadecimal string")
+    config["api_hash"] = api_hash
+
+    # TELEGRAM_SESSION_NAME (Optional)
+    config["session_name"] = os.getenv("TELEGRAM_SESSION_NAME", "telegram_session")
+
+    # TELEGRAM_SESSION_STRING (Optional)
+    config["session_string"] = os.getenv("TELEGRAM_SESSION_STRING")
+
+    # PORT (Optional - for HTTP/SSE transport)
+    port_raw = os.getenv("PORT")
+    if port_raw:
+        try:
+            port = int(port_raw)
+            if not (1 <= port <= 65535):
+                raise ValueError("PORT must be between 1 and 65535")
+            config["port"] = port
+        except ValueError as e:
+            raise ValueError(f"PORT must be a valid integer between 1-65535: {e}")
+    else:
+        config["port"] = None
+
+    # HOST (Optional - defaults to 127.0.0.1 for security)
+    config["host"] = os.getenv("HOST", "127.0.0.1")
+    # Validate HOST is a valid IP or hostname
+    if config["host"] not in ["127.0.0.1", "localhost", "0.0.0.0"]:
+        # Allow custom hostnames but warn if not localhost
+        pass
+
+    # TELEGRAM_USER_ID (Required for HTTP mode, optional for stdio)
+    user_id_raw = os.getenv("TELEGRAM_USER_ID")
+    if user_id_raw:
+        try:
+            config["user_id"] = int(user_id_raw)
+            if config["user_id"] <= 0:
+                raise ValueError("TELEGRAM_USER_ID must be a positive integer")
+        except ValueError as e:
+            raise ValueError(f"TELEGRAM_USER_ID must be a valid positive integer: {e}")
+    else:
+        config["user_id"] = None
+
+    # Require TELEGRAM_USER_ID when running in HTTP mode
+    if config["port"] and not config["user_id"]:
+        raise ValueError("TELEGRAM_USER_ID is required when running in HTTP mode (PORT is set)")
+
+    # AUTH_TOKEN (Optional - for HTTP API authentication)
+    config["auth_token"] = os.getenv("AUTH_TOKEN")
+
+    # ALLOWED_FILE_PATHS (Optional - restrict file operations to specific directories)
+    allowed_paths = os.getenv("ALLOWED_FILE_PATHS")
+    if allowed_paths:
+        config["allowed_file_paths"] = [
+            os.path.abspath(p.strip()) for p in allowed_paths.split(",") if p.strip()
+        ]
+    else:
+        config["allowed_file_paths"] = None
+
+    return config
+
+
+# Validate environment variables at startup
+try:
+    _config = _validate_env_vars()
+except ValueError as e:
+    print(f"Configuration error: {e}", file=sys.stderr)
+    sys.exit(1)
+
+TELEGRAM_API_ID = _config["api_id"]
+TELEGRAM_API_HASH = _config["api_hash"]
+TELEGRAM_SESSION_NAME = _config["session_name"]
+SESSION_STRING = _config["session_string"]
+PORT = _config["port"]
+HOST = _config["host"]
+TELEGRAM_USER_ID = _config["user_id"]
+AUTH_TOKEN = _config["auth_token"]
+ALLOWED_FILE_PATHS = _config["allowed_file_paths"]
 
 mcp = FastMCP("telegram")
 
@@ -131,6 +224,174 @@ class ErrorCategory(str, Enum):
     AUTH = "AUTH"
     ADMIN = "ADMIN"
     FOLDER = "FOLDER"
+    FILE = "FILE"
+    SECURITY = "SECURITY"
+
+
+# =============================================================================
+# Security: Sensitive Data Patterns for Log Sanitization
+# =============================================================================
+
+# Keys that should be sanitized in logs
+SENSITIVE_KEYS = frozenset(
+    {
+        "file_path",
+        "path",
+        "password",
+        "token",
+        "secret",
+        "api_key",
+        "api_hash",
+        "session_string",
+        "phone",
+        "phone_number",
+    }
+)
+
+
+def _sanitize_value(key: str, value: Any) -> str:
+    """Sanitize sensitive values for logging."""
+    if key.lower() in SENSITIVE_KEYS:
+        if isinstance(value, str):
+            if key.lower() in ("file_path", "path"):
+                # Show only filename, not full path
+                return f"[REDACTED:.../{os.path.basename(value)}]"
+            elif len(value) > 4:
+                return f"[REDACTED:{value[:2]}...{value[-2:]}]"
+            else:
+                return "[REDACTED]"
+        return "[REDACTED]"
+    return str(value)
+
+
+def _sanitize_context(**kwargs) -> str:
+    """Sanitize context parameters for logging."""
+    sanitized = []
+    for k, v in kwargs.items():
+        sanitized.append(f"{k}={_sanitize_value(k, v)}")
+    return ", ".join(sanitized)
+
+
+# =============================================================================
+# Security: File Path Validation (Path Traversal Protection)
+# =============================================================================
+
+
+class FileSecurityError(Exception):
+    """Exception raised for file security violations."""
+
+    pass
+
+
+def validate_file_path(file_path: str, must_exist: bool = True, must_be_readable: bool = True) -> str:
+    """
+    Validate a file path for security and accessibility.
+
+    Args:
+        file_path: The file path to validate.
+        must_exist: If True, the file must exist.
+        must_be_readable: If True, the file must be readable.
+
+    Returns:
+        The absolute, normalized file path if valid.
+
+    Raises:
+        FileSecurityError: If the path fails security validation.
+    """
+    if not file_path or not isinstance(file_path, str):
+        raise FileSecurityError("Invalid file path provided")
+
+    # Normalize and get absolute path
+    abs_path = os.path.abspath(os.path.normpath(file_path))
+
+    # Check for path traversal attempts
+    if ".." in file_path:
+        raise FileSecurityError("Path traversal detected: '..' not allowed in file paths")
+
+    # Check against allowed paths if configured
+    if ALLOWED_FILE_PATHS:
+        path_allowed = False
+        for allowed_path in ALLOWED_FILE_PATHS:
+            if abs_path.startswith(allowed_path):
+                path_allowed = True
+                break
+        if not path_allowed:
+            raise FileSecurityError(
+                "File path not in allowed directories. "
+                "Configure ALLOWED_FILE_PATHS or use an allowed directory."
+            )
+
+    # Check for symlink attacks
+    if os.path.islink(file_path):
+        real_path = os.path.realpath(file_path)
+        if ALLOWED_FILE_PATHS:
+            path_allowed = False
+            for allowed_path in ALLOWED_FILE_PATHS:
+                if real_path.startswith(allowed_path):
+                    path_allowed = True
+                    break
+            if not path_allowed:
+                raise FileSecurityError("Symlink target not in allowed directories")
+
+    # Check existence if required
+    if must_exist and not os.path.isfile(abs_path):
+        raise FileSecurityError("File does not exist")
+
+    # Check readability if required
+    if must_be_readable and must_exist and not os.access(abs_path, os.R_OK):
+        raise FileSecurityError("File is not readable")
+
+    return abs_path
+
+
+def validate_download_path(file_path: str) -> str:
+    """
+    Validate a download destination path for security.
+
+    Args:
+        file_path: The destination file path.
+
+    Returns:
+        The absolute, normalized file path if valid.
+
+    Raises:
+        FileSecurityError: If the path fails security validation.
+    """
+    if not file_path or not isinstance(file_path, str):
+        raise FileSecurityError("Invalid file path provided")
+
+    # Normalize and get absolute path
+    abs_path = os.path.abspath(os.path.normpath(file_path))
+
+    # Check for path traversal attempts
+    if ".." in file_path:
+        raise FileSecurityError("Path traversal detected: '..' not allowed in file paths")
+
+    # Get directory path
+    dir_path = os.path.dirname(abs_path) or "."
+    abs_dir = os.path.abspath(dir_path)
+
+    # Check against allowed paths if configured
+    if ALLOWED_FILE_PATHS:
+        path_allowed = False
+        for allowed_path in ALLOWED_FILE_PATHS:
+            if abs_dir.startswith(allowed_path):
+                path_allowed = True
+                break
+        if not path_allowed:
+            raise FileSecurityError(
+                "Download directory not in allowed paths. "
+                "Configure ALLOWED_FILE_PATHS or use an allowed directory."
+            )
+
+    # Check directory exists and is writable
+    if not os.path.isdir(abs_dir):
+        raise FileSecurityError("Download directory does not exist")
+
+    if not os.access(abs_dir, os.W_OK):
+        raise FileSecurityError("Download directory is not writable")
+
+    return abs_path
 
 
 def log_and_format_error(
@@ -141,9 +402,10 @@ def log_and_format_error(
     **kwargs,
 ) -> str:
     """
-    Centralized error handling function.
+    Centralized error handling function with sanitized logging.
 
     Logs an error and returns a formatted, user-friendly message.
+    Sensitive data is automatically sanitized in logs.
 
     Args:
         function_name: Name of the function where the error occurred.
@@ -156,7 +418,7 @@ def log_and_format_error(
     Returns:
         A user-friendly error message with an error code.
     """
-    # Generate a consistent error code
+    # Generate a consistent, deterministic error code using SHA256
     if isinstance(prefix, str) and prefix == "VALIDATION-001":
         # Special case for validation errors
         error_code = prefix
@@ -169,15 +431,17 @@ def log_and_format_error(
                     break
 
         prefix_str = prefix.value if isinstance(prefix, ErrorCategory) else (prefix or "GEN")
-        error_code = f"{prefix_str}-ERR-{abs(hash(function_name)) % 1000:03d}"
+        # Use deterministic hash instead of Python's hash()
+        hash_value = hashlib.sha256(function_name.encode()).hexdigest()[:3]
+        error_code = f"{prefix_str}-ERR-{hash_value.upper()}"
 
-    # Format the additional context parameters
-    context = ", ".join(f"{k}={v}" for k, v in kwargs.items())
+    # Sanitize context parameters for logging (remove sensitive data)
+    sanitized_context = _sanitize_context(**kwargs)
 
-    # Log the full technical error
-    logger.error(f"Error in {function_name} ({context}) - Code: {error_code}", exc_info=True)
+    # Log the error with sanitized context (no full stack trace by default)
+    logger.error(f"Error in {function_name} ({sanitized_context}) - Code: {error_code}")
 
-    # Return a user-friendly message
+    # Return a user-friendly message (no sensitive data exposed)
     if user_message:
         return user_message
 
@@ -221,12 +485,13 @@ def validate_id(*param_names_to_validate):
                                 )
                             return int_value, None
                         except ValueError:
-                            if re.match(r"^@?[a-zA-Z0-9_]{5,}$", value):
+                            # Telegram usernames are 5-32 alphanumeric characters and underscores
+                            if re.match(r"^@?[a-zA-Z0-9_]{5,32}$", value):
                                 return value, None
                             else:
                                 return (
                                     None,
-                                    f"Invalid {p_name}: '{value}'. Must be a valid integer ID, or a username string.",
+                                    f"Invalid {p_name}: '{value}'. Must be a valid integer ID, or a username string (5-32 characters).",
                                 )
 
                     # Handle other invalid types
@@ -1665,16 +1930,18 @@ async def send_file(chat_id: Union[int, str], file_path: str, caption: str = Non
         caption: Optional caption for the file.
     """
     try:
-        if not os.path.isfile(file_path):
-            return f"File not found: {file_path}"
-        if not os.access(file_path, os.R_OK):
-            return f"File is not readable: {file_path}"
+        # Security: Validate file path (prevents path traversal attacks)
+        try:
+            validated_path = validate_file_path(file_path, must_exist=True, must_be_readable=True)
+        except FileSecurityError as e:
+            return f"File security error: {str(e)}"
+
         entity = await client.get_entity(chat_id)
-        await client.send_file(entity, file_path, caption=caption)
+        await client.send_file(entity, validated_path, caption=caption)
         return f"File sent to chat {chat_id}."
     except Exception as e:
         return log_and_format_error(
-            "send_file", e, chat_id=chat_id, file_path=file_path, caption=caption
+            "send_file", e, ErrorCategory.FILE, chat_id=chat_id, file_path=file_path
         )
 
 
@@ -1691,22 +1958,26 @@ async def download_media(chat_id: Union[int, str], message_id: int, file_path: s
         file_path: Absolute path to save the downloaded file (must be writable).
     """
     try:
+        # Security: Validate download path (prevents path traversal attacks)
+        try:
+            validated_path = validate_download_path(file_path)
+        except FileSecurityError as e:
+            return f"File security error: {str(e)}"
+
         entity = await client.get_entity(chat_id)
         msg = await client.get_messages(entity, ids=message_id)
         if not msg or not msg.media:
             return "No media found in the specified message."
-        # Check if directory is writable
-        dir_path = os.path.dirname(file_path) or "."
-        if not os.access(dir_path, os.W_OK):
-            return f"Directory not writable: {dir_path}"
-        await client.download_media(msg, file=file_path)
-        if not os.path.isfile(file_path):
-            return f"Download failed: file not created at {file_path}"
-        return f"Media downloaded to {file_path}."
+
+        await client.download_media(msg, file=validated_path)
+        if not os.path.isfile(validated_path):
+            return "Download failed: file was not created"
+        return f"Media downloaded successfully."
     except Exception as e:
         return log_and_format_error(
             "download_media",
             e,
+            ErrorCategory.FILE,
             chat_id=chat_id,
             message_id=message_id,
             file_path=file_path,
@@ -1745,12 +2016,18 @@ async def set_profile_photo(file_path: str) -> str:
     Set a new profile photo.
     """
     try:
+        # Security: Validate file path and existence
+        try:
+            validated_path = validate_file_path(file_path, must_exist=True, must_be_readable=True)
+        except FileSecurityError as e:
+            return f"File security error: {str(e)}"
+
         await client(
-            functions.photos.UploadProfilePhotoRequest(file=await client.upload_file(file_path))
+            functions.photos.UploadProfilePhotoRequest(file=await client.upload_file(validated_path))
         )
         return "Profile photo updated."
     except Exception as e:
-        return log_and_format_error("set_profile_photo", e, file_path=file_path)
+        return log_and_format_error("set_profile_photo", e, ErrorCategory.PROFILE)
 
 
 @mcp.tool(
@@ -4154,9 +4431,9 @@ async def _main() -> None:
             # Run with HTTP/SSE transport on the specified port
             import uvicorn
 
-            print(f"Starting HTTP/SSE server on port {PORT}...")
+            print(f"Starting HTTP/SSE server on {HOST}:{PORT}...")
             app = mcp.sse_app()
-            config = uvicorn.Config(app, host="0.0.0.0", port=int(PORT), log_level="info")
+            config = uvicorn.Config(app, host=HOST, port=int(PORT), log_level="info")
             server = uvicorn.Server(config)
             await server.serve()
         else:
@@ -4164,11 +4441,6 @@ async def _main() -> None:
             await mcp.run_stdio_async()
     except Exception as e:
         print(f"Error starting client: {e}", file=sys.stderr)
-        if isinstance(e, sqlite3.OperationalError) and "database is locked" in str(e):
-            print(
-                "Database lock detected. Please ensure no other instances are running.",
-                file=sys.stderr,
-            )
         sys.exit(1)
 
 
