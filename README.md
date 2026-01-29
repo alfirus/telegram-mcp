@@ -86,6 +86,8 @@ Required (generated from session_string_generator.py):
 ## 📖 Full Documentation
 
 - **[docs/SETUP_CREDENTIALS.md](docs/SETUP_CREDENTIALS.md)** - Complete setup & credential generation guide (START HERE!)
+- **[docs/TROUBLESHOOT_STARTUP.md](docs/TROUBLESHOOT_STARTUP.md)** - Detailed startup error solutions and troubleshooting
+- **[docs/SESSION_STRING_GUIDE.md](docs/SESSION_STRING_GUIDE.md)** - Session string management and troubleshooting
 - **[docs/INSTALLATION.md](docs/INSTALLATION.md)** - Installation and daemon management guide
 - **[QUICK_START.md](QUICK_START.md)** - Fast reference for common tasks
 - **[docs/IMPLEMENTATION_SUMMARY.md](docs/IMPLEMENTATION_SUMMARY.md)** - v2.0 enhancements overview
@@ -250,6 +252,75 @@ AUTH_TOKEN=your_token              # Optional: API auth
 ALLOWED_FILE_PATHS=/path1,/path2   # Optional: Upload restrictions
 ```
 
+### Getting Optional Credentials
+
+#### TELEGRAM_USER_ID
+
+Your Telegram account's numeric ID. To find it:
+
+```bash
+# Option 1: Use a bot (easiest)
+# 1. Open Telegram and start chat with @userinfobot
+# 2. Send /start
+# 3. Your ID will be displayed
+
+# Option 2: Get from first message in saved messages
+# 1. Forward a message from any chat to your Saved Messages
+# 2. Open Saved Messages
+# 3. Use get_message_sender to get your ID from that message
+
+# Option 3: Run this Python command after session is set up
+python3 -c "
+import asyncio
+from telethon import TelegramClient
+from telethon.sessions import StringSession
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+async def get_id():
+    session = os.getenv('TELEGRAM_SESSION_STRING')
+    client = TelegramClient(StringSession(session), int(os.getenv('TELEGRAM_API_ID')), os.getenv('TELEGRAM_API_HASH'))
+    await client.connect()
+    me = await client.get_me()
+    print(f'Your User ID: {me.id}')
+    await client.disconnect()
+
+asyncio.run(get_id())
+"
+```
+
+#### AUTH_TOKEN
+
+Optional API authentication token for securing the MCP server. Generate it yourself:
+
+```bash
+# Option 1: Use a simple string (not recommended for production)
+# Generate any string: AUTH_TOKEN=my_secret_token_123
+
+# Option 2: Use Python to generate a secure token
+python3 -c "import secrets; print(f'AUTH_TOKEN={secrets.token_urlsafe(32)}')"
+
+# Option 3: Use OpenSSL
+openssl rand -hex 32
+# Then use: AUTH_TOKEN=<generated_value>
+
+# Option 4: Use UUID
+python3 -c "import uuid; print(f'AUTH_TOKEN={uuid.uuid4()}')"
+```
+
+**Security Note:** Keep AUTH_TOKEN private and only share with authorized users. If exposed, generate a new token and update your .env file.
+
+When AUTH_TOKEN is set, all API requests must include the header:
+```bash
+Authorization: Bearer YOUR_AUTH_TOKEN
+```
+
+Example with curl:
+```bash
+curl -H "Authorization: Bearer your_token_here" http://localhost:3000/health
+```
+
 ---
 
 ## 🚀 Features & Tools
@@ -385,6 +456,105 @@ docker logs -f telegram-mcp
 
 ## 🐛 Troubleshooting
 
+### Startup Errors
+
+#### Error: "Task exception was never retrieved" / SystemExit(1)
+
+**Cause:** Missing required environment variable `TELEGRAM_USER_ID`
+
+**Solution:** The daemon requires `TELEGRAM_USER_ID` to run in HTTP mode. Get your ID using one of these methods:
+
+```bash
+# Method 1: Use @userinfobot (quickest)
+# 1. Open Telegram and search for @userinfobot
+# 2. Send /start
+# 3. Copy your ID
+
+# Method 2: Generate from your session (requires existing .env with API credentials)
+python3 -c "
+import asyncio
+from telethon import TelegramClient
+from telethon.sessions import StringSession
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+async def get_id():
+    session = os.getenv('TELEGRAM_SESSION_STRING')
+    client = TelegramClient(StringSession(session), int(os.getenv('TELEGRAM_API_ID')), os.getenv('TELEGRAM_API_HASH'))
+    await client.connect()
+    me = await client.get_me()
+    print(f'Your User ID: {me.id}')
+    await client.disconnect()
+
+asyncio.run(get_id())
+"
+```
+
+Then add to your .env file:
+```bash
+TELEGRAM_USER_ID=your_id_here
+```
+
+#### Error: "Timeout connecting to Telegram" or Connection Timeout
+
+**Cause:** Network connectivity issue, invalid session, or invalid API credentials
+
+**Solution:** Verify your credentials and network:
+
+```bash
+# 1. Check network connectivity
+ping google.com
+
+# 2. Regenerate your session string (it may be expired)
+python3 session_string_generator.py
+
+# 3. Verify API credentials are correct
+grep TELEGRAM_API .env
+# Must match exactly from https://my.telegram.org/apps
+
+# 4. Check if Telegram is accessible from your network
+# (try using a regular Telegram client)
+
+# 5. Try with a longer timeout
+timeout 120 python3 main.py
+```
+
+See [docs/TROUBLESHOOT_STARTUP.md](docs/TROUBLESHOOT_STARTUP.md) for detailed solutions.
+
+#### Error: "Configuration error: TELEGRAM_API_ID environment variable is required"
+
+**Cause:** Missing `.env` file or missing credentials
+
+**Solution:** Create .env file with required credentials:
+
+```bash
+# Create .env file
+cat > .env << 'EOF'
+# Required credentials (get from https://my.telegram.org/apps)
+TELEGRAM_API_ID=your_api_id
+TELEGRAM_API_HASH=your_api_hash
+TELEGRAM_SESSION_STRING=your_session_string
+TELEGRAM_USER_ID=your_user_id
+
+# Optional
+PORT=3000
+HOST=127.0.0.1
+EOF
+```
+
+#### Error: "TELEGRAM_SESSION_STRING is required when PORT is set"
+
+**Cause:** Session string not generated
+
+**Solution:** Generate session string first:
+
+```bash
+# Make sure .env has API_ID and API_HASH
+python3 session_string_generator.py
+# Follow the prompts to complete authentication
+```
+
 ### Installation Issues
 
 ```bash
@@ -421,7 +591,7 @@ lsof -i :3000
 ./daemon.sh start --port 8080
 ```
 
-See [INSTALLATION.md](docs/INSTALLATION.md) for more troubleshooting.
+See [INSTALLATION.md](docs/INSTALLATION.md) and [docs/TROUBLESHOOT_STARTUP.md](docs/TROUBLESHOOT_STARTUP.md) for more troubleshooting.
 
 ---
 

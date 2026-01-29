@@ -339,6 +339,61 @@ Enter your phone number or bot token: 123456:ABC-DEF...
 ### Files You'll Create:
 - `.env` - Your credentials and configuration
 
+---
+
+## Step 4: Optional - Get TELEGRAM_USER_ID and AUTH_TOKEN
+
+### TELEGRAM_USER_ID
+
+Your Telegram account's numeric ID. To find it:
+
+```bash
+# Option 1: Use a Telegram bot (easiest & quickest)
+# 1. Open Telegram and search for @userinfobot
+# 2. Send /start
+# 3. Your ID will be displayed immediately
+
+# Option 2: Get from your session (requires Python)
+python3 -c "
+import asyncio
+from telethon import TelegramClient
+from telethon.sessions import StringSession
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+async def get_id():
+    session = os.getenv('TELEGRAM_SESSION_STRING')
+    client = TelegramClient(StringSession(session), int(os.getenv('TELEGRAM_API_ID')), os.getenv('TELEGRAM_API_HASH'))
+    await client.connect()
+    me = await client.get_me()
+    print(f'Your User ID: {me.id}')
+    await client.disconnect()
+
+asyncio.run(get_id())
+"
+```
+
+### AUTH_TOKEN
+
+Optional API authentication token for securing the MCP server. Generate one:
+
+```bash
+# Option 1: Generate secure token with Python
+python3 -c "import secrets; print(f'AUTH_TOKEN={secrets.token_urlsafe(32)}')"
+
+# Option 2: Use OpenSSL
+openssl rand -hex 32
+# Then prepend: AUTH_TOKEN=
+
+# Option 3: Use UUID
+python3 -c "import uuid; print(f'AUTH_TOKEN={uuid.uuid4()}')"
+```
+
+**Security Note:** Keep AUTH_TOKEN private and rotate it periodically.
+
+---
+
 ### Commands to Run (In Order):
 
 ```bash
@@ -354,10 +409,13 @@ nano .env
 python3 session_string_generator.py
 # Update .env with TELEGRAM_SESSION_STRING
 
-# 4. Start daemon
+# 4. (Optional) Add AUTH_TOKEN and TELEGRAM_USER_ID
+# Use methods above to get these values
+
+# 5. Start daemon
 ./daemon.sh start
 
-# 5. Verify
+# 6. Verify
 ./daemon.sh status
 curl http://localhost:3000/health
 ```
@@ -368,7 +426,7 @@ curl http://localhost:3000/health
 
 If you're stuck:
 
-1. Check the [README.md](README.md) for quick start
+1. Check the [README.md](../../README.md) for quick start
 2. Review [docs/INSTALLATION.md](docs/INSTALLATION.md) for detailed setup
 3. Check logs: `./daemon.sh logs --follow`
 4. Run tests: `pytest tests/ -v`

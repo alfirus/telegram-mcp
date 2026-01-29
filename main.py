@@ -176,10 +176,26 @@ mcp = FastMCP("telegram")
 
 if SESSION_STRING:
     # Use the string session if available
-    client = TelegramClient(StringSession(SESSION_STRING), TELEGRAM_API_ID, TELEGRAM_API_HASH)
+    client = TelegramClient(
+        StringSession(SESSION_STRING), 
+        TELEGRAM_API_ID, 
+        TELEGRAM_API_HASH,
+        timeout=30,  # 30 second timeout for operations
+        request_retries=3,  # Retry up to 3 times on failure
+        connection_retries=3,  # Retry connection up to 3 times
+        retry_delay=1,  # 1 second delay between retries
+    )
 else:
     # Use file-based session
-    client = TelegramClient(TELEGRAM_SESSION_NAME, TELEGRAM_API_ID, TELEGRAM_API_HASH)
+    client = TelegramClient(
+        TELEGRAM_SESSION_NAME, 
+        TELEGRAM_API_ID, 
+        TELEGRAM_API_HASH,
+        timeout=30,  # 30 second timeout for operations
+        request_retries=3,  # Retry up to 3 times on failure
+        connection_retries=3,  # Retry connection up to 3 times
+        retry_delay=1,  # 1 second delay between retries
+    )
 
 # Setup robust logging with both file and console output
 logger = logging.getLogger("telegram_mcp")
@@ -4655,7 +4671,38 @@ async def _main() -> None:
         
         # Start the Telethon client non-interactively
         print("Starting Telegram client...")
-        await client.start()
+        try:
+            # Connect with timeout and retry logic
+            await asyncio.wait_for(client.start(), timeout=60)
+        except asyncio.TimeoutError:
+            print(
+                "Timeout connecting to Telegram. This may be a network issue.",
+                file=sys.stderr,
+            )
+            print(
+                "Please check your internet connection and try again.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        except Exception as e:
+            print(f"Error starting Telegram client: {e}", file=sys.stderr)
+            print(
+                "Common causes:",
+                file=sys.stderr,
+            )
+            print(
+                "  1. Invalid session string (expired or corrupted)",
+                file=sys.stderr,
+            )
+            print(
+                "  2. Invalid API ID or API Hash",
+                file=sys.stderr,
+            )
+            print(
+                "  3. Network connectivity issues",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
         # Validate TELEGRAM_USER_ID if set
         if TELEGRAM_USER_ID:
