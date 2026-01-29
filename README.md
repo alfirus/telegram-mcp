@@ -4,7 +4,7 @@
 
 ![MCP Badge](https://badge.mcpx.dev)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-green?style=flat-square)](https://opensource.org/licenses/Apache-2.0)
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
 
 ---
 
@@ -52,14 +52,22 @@ This script will prompt you to enter:
 ### 3. Configure Credentials
 
 ```bash
-# Edit .env file with the generated session string
+# Edit .env file
 nano .env
 ```
 
-Required (generated from session_string_generator.py):
+**Option A: User Account Mode** (full Telegram access)
+- `TELEGRAM_API_ID` - Your API ID (from https://my.telegram.org)
+- `TELEGRAM_API_HASH` - Your API hash
+- `TELEGRAM_SESSION_STRING` - Generated from step 2
+
+**Option B: Bot Mode** (recommended for AI agents)
 - `TELEGRAM_API_ID` - Your API ID
 - `TELEGRAM_API_HASH` - Your API hash
-- `TELEGRAM_SESSION_STRING` - Generated from the script above
+- `TELEGRAM_BOT_TOKEN` - Get from @BotFather on Telegram
+- `TELEGRAM_USER_ID` - Your user ID (get from @userinfobot)
+
+> **Note:** For Bot Mode, you must send `/start` to your bot first!
 
 ### 4. Run as Daemon
 
@@ -77,9 +85,10 @@ Required (generated from session_string_generator.py):
 ./daemon.sh stop
 ```
 
-**HTTP Server**: http://localhost:3000  
-**Metrics**: http://localhost:3000/metrics  
-**WebSocket**: ws://localhost:3000/ws/updates
+**HTTP Server**: http://127.0.0.1:3000
+**MCP SSE Endpoint**: http://127.0.0.1:3000/sse
+**Health Check**: http://127.0.0.1:3000/health
+**Metrics**: http://127.0.0.1:3000/metrics
 
 ---
 
@@ -100,7 +109,13 @@ Required (generated from session_string_generator.py):
 
 ## ✨ Version 2.0 - Enhanced Performance & Monitoring
 
-**New in v2.0.1:**
+**New in v2.0.2:**
+- 🤖 **Bot Mode** - Use Telegram Bot for AI agent communication (recommended)
+- 🔗 **MCP SSE Transport** - Proper `/sse` endpoint for MCP clients
+- 🐍 **Python 3.14 Support** - Full compatibility with latest Python
+- 🔒 **Security Hardening** - Path traversal protection, sanitized logs
+
+**v2.0.1 Features:**
 - 🚀 **Caching Layer** - 88% cache hit rate, 10x faster repeated queries
 - ⚡ **Rate Limiting** - Zero FloodWait errors with intelligent rate limiting
 - 🧪 **Testing Suite** - 20+ tests for reliability and quality
@@ -218,9 +233,27 @@ sudo journalctl -u telegram-mcp -f
 
 ## 🔌 API Endpoints
 
+### MCP Protocol (for AI Agents)
+
+- `GET /sse` - Server-Sent Events endpoint for MCP clients
+- `POST /messages` - MCP message endpoint
+- `GET /info` - MCP server info and capabilities
+
+**Connect from MCP clients (OpenCode, Claude Desktop, etc.):**
+```json
+{
+  "mcpServers": {
+    "telegram": {
+      "transport": "sse",
+      "url": "http://127.0.0.1:3000/sse"
+    }
+  }
+}
+```
+
 ### Health & Metrics
 
-- `GET /health` - Health check
+- `GET /health` - Health check with MCP endpoint info
 - `GET /metrics` - Prometheus metrics
 - `GET /stats` - Combined statistics
 
@@ -228,10 +261,10 @@ sudo journalctl -u telegram-mcp -f
 
 - `WS /ws/updates` - WebSocket for Telegram events
 
-### MCP Server
+### Transport Modes
 
-- `stdio` - Standard input/output (Claude Desktop)
-- `HTTP` - HTTP transport for web clients
+- **stdio** - Standard input/output (Claude Desktop native)
+- **HTTP/SSE** - HTTP transport with SSE (when PORT is set)
 
 ---
 
@@ -240,19 +273,51 @@ sudo journalctl -u telegram-mcp -f
 ### Environment Variables
 
 ```bash
-# Required
+# Required - API Credentials (get from https://my.telegram.org/apps)
 TELEGRAM_API_ID=your_api_id
 TELEGRAM_API_HASH=your_api_hash
+
+# Authentication Mode (Choose ONE)
+# ---------------------------------
+# OPTION 1: User Account Mode (full access to your Telegram account)
 TELEGRAM_SESSION_STRING=your_session_string
 
-# Optional
-PORT=3000                           # Default: 3000
-HOST=127.0.0.1                     # Default: 127.0.0.1
+# OPTION 2: Bot Mode (recommended for AI agents)
+# Create a bot via @BotFather and use the token
+TELEGRAM_BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrsTUVwxyz
+
+# Your Telegram User ID (required for bot mode, optional for user mode)
+TELEGRAM_USER_ID=your_user_id
+
+# Optional Settings
+PORT=3000                           # Default: 3000 (enables HTTP/SSE mode)
+HOST=127.0.0.1                     # Default: 127.0.0.1 (secure)
 DATABASE_PATH=telegram_mcp.db      # Default: telegram_mcp.db
-TELEGRAM_USER_ID=your_user_id      # Optional: For validation
 AUTH_TOKEN=your_token              # Optional: API auth
 ALLOWED_FILE_PATHS=/path1,/path2   # Optional: Upload restrictions
 ```
+
+### Authentication Modes
+
+#### User Account Mode
+Full access to your Telegram account. Can read/send messages to any chat.
+```bash
+TELEGRAM_SESSION_STRING=your_session_string
+# Generate with: python3 session_string_generator.py
+```
+
+#### Bot Mode (Recommended for AI Agents)
+Uses a Telegram Bot to communicate. The bot can only message users who have started a conversation with it first.
+```bash
+TELEGRAM_BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrsTUVwxyz
+TELEGRAM_USER_ID=1009859337  # Your user ID (bot sends messages to you)
+```
+
+**To set up Bot Mode:**
+1. Open Telegram and search for `@BotFather`
+2. Send `/newbot` and follow prompts
+3. Copy the bot token to `.env`
+4. **Important:** Send `/start` to your bot first (bots can only message users who messaged them)
 
 ### Getting Optional Credentials
 
@@ -781,8 +846,14 @@ For issues or questions:
 
 ---
 
-**Version**: 2.0.1  
-**Python**: 3.8+  
-**Last Updated**: January 29, 2026
+**Version**: 2.0.2
+**Python**: 3.10+ (3.14 compatible)
+**Last Updated**: January 30, 2026
+
+### What's New in 2.0.2
+- **Bot Mode** - Use a Telegram Bot instead of user account (recommended for AI agents)
+- **MCP SSE Transport** - Proper `/sse` and `/messages` endpoints for MCP clients
+- **Python 3.14 Support** - Fixed asyncio compatibility issues
+- **Security Hardening** - Path traversal protection, sanitized logging, secure defaults
 
 Made with ❤️ for the Claude and Telethon communities

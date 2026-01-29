@@ -101,8 +101,27 @@ def _validate_env_vars() -> dict:
     # TELEGRAM_SESSION_NAME (Optional)
     config["session_name"] = os.getenv("TELEGRAM_SESSION_NAME", "telegram_session")
 
-    # TELEGRAM_SESSION_STRING (Optional)
+    # TELEGRAM_SESSION_STRING (Optional - for user account mode)
     config["session_string"] = os.getenv("TELEGRAM_SESSION_STRING")
+
+    # TELEGRAM_BOT_TOKEN (Optional - for bot mode)
+    # Format: 123456789:ABCdefGHIjklMNOpqrsTUVwxyz
+    bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+    if bot_token:
+        # Validate bot token format
+        if ":" not in bot_token:
+            raise ValueError(
+                "TELEGRAM_BOT_TOKEN format is invalid. "
+                "Expected format: 123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
+            )
+    config["bot_token"] = bot_token
+
+    # Ensure at least one authentication method is provided
+    if not config["session_string"] and not config["bot_token"]:
+        raise ValueError(
+            "Either TELEGRAM_SESSION_STRING or TELEGRAM_BOT_TOKEN must be provided. "
+            "For bot mode (recommended for AI agents), create a bot via @BotFather."
+        )
 
     # PORT (Optional - for HTTP/SSE transport)
     port_raw = os.getenv("PORT")
@@ -166,16 +185,30 @@ TELEGRAM_API_ID = _config["api_id"]
 TELEGRAM_API_HASH = _config["api_hash"]
 TELEGRAM_SESSION_NAME = _config["session_name"]
 SESSION_STRING = _config["session_string"]
+BOT_TOKEN = _config["bot_token"]
 PORT = _config["port"]
 HOST = _config["host"]
 TELEGRAM_USER_ID = _config["user_id"]
 AUTH_TOKEN = _config["auth_token"]
 ALLOWED_FILE_PATHS = _config["allowed_file_paths"]
 
+# Determine if running in bot mode or user mode
+IS_BOT_MODE = bool(BOT_TOKEN) and not SESSION_STRING
+
 mcp = FastMCP("telegram")
 
-if SESSION_STRING:
-    # Use the string session if available
+# Create the Telegram client based on authentication mode
+if BOT_TOKEN and not SESSION_STRING:
+    # Bot mode - use bot token
+    print("[Config] Running in BOT MODE - using bot token")
+    client = TelegramClient(
+        "bot_session",
+        TELEGRAM_API_ID,
+        TELEGRAM_API_HASH
+    )
+elif SESSION_STRING:
+    # User mode with string session
+    print("[Config] Running in USER MODE - using session string")
     client = TelegramClient(
         StringSession(SESSION_STRING), 
         TELEGRAM_API_ID, 
@@ -4670,12 +4703,20 @@ async def _main() -> None:
         asyncio.create_task(cache.start_cleanup_task())
         
         # Start the Telethon client non-interactively
-        print("Starting Telegram client...")
+        if IS_BOT_MODE:
+            print(f"Starting Telegram BOT client...")
+        else:
+            print("Starting Telegram USER client...")
         try:
             # For Python 3.14+, wrap client.start() in a task to handle
             # stricter asyncio timeout requirements
             async def start_client():
-                await client.start()
+                if IS_BOT_MODE:
+                    # Bot mode - authenticate with bot token
+                    await client.start(bot_token=BOT_TOKEN)
+                else:
+                    # User mode - authenticate with session
+                    await client.start()
 
             # Create and await the task to ensure proper timeout context
             start_task = asyncio.create_task(start_client())
@@ -4701,18 +4742,28 @@ async def _main() -> None:
             
             # Check for specific error patterns
             if "unauthorized" in error_lower:
-                print(
-                    "\n⚠️  Unauthorized: Your session string may be invalid or expired.",
-                    file=sys.stderr,
-                )
-                print(
-                    "Solution: Regenerate your session string:",
-                    file=sys.stderr,
-                )
-                print(
-                    "  python3 session_string_generator.py",
-                    file=sys.stderr,
-                )
+                if IS_BOT_MODE:
+                    print(
+                        "\n⚠️  Unauthorized: Your bot token may be invalid.",
+                        file=sys.stderr,
+                    )
+                    print(
+                        "Solution: Check your TELEGRAM_BOT_TOKEN from @BotFather",
+                        file=sys.stderr,
+                    )
+                else:
+                    print(
+                        "\n⚠️  Unauthorized: Your session string may be invalid or expired.",
+                        file=sys.stderr,
+                    )
+                    print(
+                        "Solution: Regenerate your session string:",
+                        file=sys.stderr,
+                    )
+                    print(
+                        "  python3 session_string_generator.py",
+                        file=sys.stderr,
+                    )
             elif "timeout" in error_lower or "connection" in error_lower:
                 print(
                     "\n⚠️  Connection error: Check your network connection.",
