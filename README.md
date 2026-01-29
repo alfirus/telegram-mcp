@@ -461,40 +461,95 @@ docker logs -f telegram-mcp
 
 #### Error: "Task exception was never retrieved" / SystemExit(1)
 
-**Cause:** Missing required environment variable `TELEGRAM_USER_ID`
+**Cause:** Missing required environment variable `TELEGRAM_USER_ID` OR invalid Telegram credentials
 
-**Solution:** The daemon requires `TELEGRAM_USER_ID` to run in HTTP mode. Get your ID using one of these methods:
+**Solution:** 
+
+First, verify your credentials are correct:
 
 ```bash
-# Method 1: Use @userinfobot (quickest)
-# 1. Open Telegram and search for @userinfobot
-# 2. Send /start
-# 3. Copy your ID
+# Check what you have in .env
+cat .env | grep TELEGRAM_
 
-# Method 2: Generate from your session (requires existing .env with API credentials)
-python3 -c "
-import asyncio
-from telethon import TelegramClient
-from telethon.sessions import StringSession
-import os
-from dotenv import load_dotenv
-
-load_dotenv()
-async def get_id():
-    session = os.getenv('TELEGRAM_SESSION_STRING')
-    client = TelegramClient(StringSession(session), int(os.getenv('TELEGRAM_API_ID')), os.getenv('TELEGRAM_API_HASH'))
-    await client.connect()
-    me = await client.get_me()
-    print(f'Your User ID: {me.id}')
-    await client.disconnect()
-
-asyncio.run(get_id())
-"
+# Output should look like:
+# TELEGRAM_API_ID=123456
+# TELEGRAM_API_HASH=abc123...
+# TELEGRAM_SESSION_STRING=1BVtsOJy...
+# TELEGRAM_USER_ID=123456789
 ```
 
-Then add to your .env file:
+**Step 1: Add TELEGRAM_USER_ID if missing**
+
+Get your ID from @userinfobot in Telegram:
 ```bash
-TELEGRAM_USER_ID=your_id_here
+# Open Telegram, search @userinfobot, send /start
+# Copy your numeric ID and add to .env:
+echo "TELEGRAM_USER_ID=your_id_here" >> .env
+```
+
+**Step 2: Verify API Credentials**
+
+```bash
+# Visit https://my.telegram.org/apps
+# Check that your TELEGRAM_API_ID and TELEGRAM_API_HASH match EXACTLY
+grep TELEGRAM_API .env
+```
+
+**Step 3: Regenerate Session String (if needed)**
+
+If API credentials are correct but still getting errors:
+```bash
+python3 session_string_generator.py
+# Follow prompts to authenticate
+# Script will update .env automatically
+```
+
+**Step 4: Restart**
+```bash
+./daemon.sh stop
+./daemon.sh start
+./daemon.sh logs --follow
+```
+
+#### Error: "Error starting Telegram client: ..." (with details)
+
+The daemon now provides specific error messages. Check the error and try:
+
+**If error contains "Unauthorized":**
+```bash
+# Your session is invalid/expired
+python3 session_string_generator.py
+./daemon.sh restart
+```
+
+**If error contains "timeout" or "connection":**
+```bash
+# Network issue
+ping google.com  # Check internet
+# Try again or use different network
+./daemon.sh start
+```
+
+**If error contains "RPC":**
+```bash
+# API credentials wrong
+# 1. Visit https://my.telegram.org/apps
+# 2. Copy exact API_ID and API_HASH
+# 3. Update .env with correct values
+nano .env
+./daemon.sh restart
+```
+
+**Quick Diagnostic:**
+```bash
+# Check your configuration
+cat .env | grep TELEGRAM_
+
+# Verify format:
+# - TELEGRAM_API_ID=123456 (all numbers)
+# - TELEGRAM_API_HASH=abc123... (32 hex chars)
+# - TELEGRAM_SESSION_STRING=1BVts... (long string)
+# - TELEGRAM_USER_ID=123456789 (all numbers)
 ```
 
 #### Error: "Timeout connecting to Telegram" or Connection Timeout
@@ -567,6 +622,22 @@ pip --version
 
 # Check installed packages
 pip list | grep telegram
+```
+
+### Run Diagnostic Tool
+
+If you're having issues, use the diagnostic tool:
+
+```bash
+# Run diagnostics
+python3 diagnose.py
+
+# This will check:
+# - Required configuration files
+# - .env variables and formats
+# - Python package installations
+# - Network connectivity
+# - Connection to Telegram servers
 ```
 
 ### Daemon Issues

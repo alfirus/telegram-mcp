@@ -4690,22 +4690,89 @@ async def _main() -> None:
             )
             sys.exit(1)
         except Exception as e:
-            error_str = str(e).lower()
-            print(f"Error starting Telegram client: {e}", file=sys.stderr)
+            error_msg = str(e)
+            error_lower = error_msg.lower()
+            print(f"Error starting Telegram client: {error_msg}", file=sys.stderr)
+            
+            # Check for specific error patterns
+            if "unauthorized" in error_lower:
+                print(
+                    "\n⚠️  Unauthorized: Your session string may be invalid or expired.",
+                    file=sys.stderr,
+                )
+                print(
+                    "Solution: Regenerate your session string:",
+                    file=sys.stderr,
+                )
+                print(
+                    "  python3 session_string_generator.py",
+                    file=sys.stderr,
+                )
+            elif "timeout" in error_lower or "connection" in error_lower:
+                print(
+                    "\n⚠️  Connection error: Check your network connection.",
+                    file=sys.stderr,
+                )
+                print(
+                    "Try: ping google.com",
+                    file=sys.stderr,
+                )
+            elif "rpcsendmessagelayererror" in error_lower or "rpc" in error_lower:
+                print(
+                    "\n⚠️  RPC error: Your API credentials or session may be invalid.",
+                    file=sys.stderr,
+                )
+                print(
+                    "Verify your .env has correct:",
+                    file=sys.stderr,
+                )
+                print(
+                    "  - TELEGRAM_API_ID (from https://my.telegram.org)",
+                    file=sys.stderr,
+                )
+                print(
+                    "  - TELEGRAM_API_HASH (from https://my.telegram.org)",
+                    file=sys.stderr,
+                )
+                print(
+                    "  - TELEGRAM_SESSION_STRING (from session_string_generator.py)",
+                    file=sys.stderr,
+                )
+            else:
+                print(
+                    "\nCommon causes:",
+                    file=sys.stderr,
+                )
+                print(
+                    "  1. Invalid session string (expired or corrupted)",
+                    file=sys.stderr,
+                )
+                print(
+                    "  2. Invalid API ID or API Hash from my.telegram.org",
+                    file=sys.stderr,
+                )
+                print(
+                    "  3. Network connectivity issues",
+                    file=sys.stderr,
+                )
+                print(
+                    "  4. Firewall or VPN blocking Telegram",
+                    file=sys.stderr,
+                )
             print(
-                "Common causes:",
+                "\nDiagnostic steps:",
                 file=sys.stderr,
             )
             print(
-                "  1. Invalid session string (expired or corrupted)",
+                "  1. Check: cat .env | grep TELEGRAM_",
                 file=sys.stderr,
             )
             print(
-                "  2. Invalid API ID or API Hash",
+                "  2. Verify all values are from https://my.telegram.org",
                 file=sys.stderr,
             )
             print(
-                "  3. Network connectivity issues",
+                "  3. Regenerate: python3 session_string_generator.py",
                 file=sys.stderr,
             )
             print(
